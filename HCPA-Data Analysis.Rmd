@@ -1,0 +1,212 @@
+---
+title: "HCPA-Data Analysis"
+output:
+  html_document:
+    code_folding: hide
+date: "2025-07-30"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+library(lme4)
+library(dplyr)
+library(arsenal)
+library(magick)
+library(sjPlot)
+```
+
+## Load dataset
+```{r}
+hcpa_final <- read.csv('~/Desktop/hcpa_final.csv')
+```
+
+## Data processing procedure
+```{r message=FALSE, warning=FALSE}
+img <- image_read("~/Desktop/HCPA.jpg")
+print(img)
+```
+The image shows the flow chart of the data cleaning process with sample size and cleaning method. We used the HCPA_final data (N = 490) to conduct mixed effects analysis. 
+
+## Outcome variable totalcogcomp
+## Summary Statistic
+
+```{r,results='asis' }
+tab1 <- tableby(~ nih_totalcogcomp_unadjusted + nih_fluidcogcomp_unadjusted + nih_crycogcomp_unadjusted + power264.W_scale + Grayratio_scale + MeanThickness + interview_age_years + sex + moca_edu, data=hcpa_final)
+
+summary(tab1)
+```
+The dataset includes 490 participants with cognitive and neuroimaging measures. The unadjusted NIH cognitive scores show the following means (SDs): total composite (105.84 ± 10.73), fluid composite (99.85 ± 12.69), and crystallized composite (111.02 ± 9.24). The standardized predictors, power264.W and Grayratio, have mean = 0 and SD = 1 (ranges: −2.39 to 3.67 and −2.76 to 3.62, respectively). Structural metrics include mean cortical thickness (2.56 ± 0.15 mm), while demographic variables reveal an average age of 57.63 (±14.90) years, 59.2% female participants, and mean education (MoCA) of 17.53 (±2.22) years. The ranges indicate broad variability across all measures.
+
+
+
+## Modelling for whole dataset (mixed-effects model) 
+```{r}
+lmermodel_total1 <- lmer(
+  nih_totalcogcomp_unadjusted ~ power264.W_scale + Grayratio_scale + interview_age_years + sex + moca_edu + (1| site),
+  data = hcpa_final
+)
+
+lmermodel_total2 <- lmer(
+  nih_totalcogcomp_unadjusted ~ power264.W_scale + Grayratio_scale + power264.W_scale*Grayratio_scale + interview_age_years + sex + moca_edu+ (1| site),
+  data = hcpa_final
+)
+
+tab_model(lmermodel_total1,lmermodel_total2,dv.labels = c("Without interaction term", "With interaction term"))
+
+```
+The model examined the effects of standardized predictors (power264.W, Grayratio) on cognitive outcomes, with and without their interaction term. Both power264.W (β = −0.27, p = 0.573) and Grayratio (β = 0.32, p = 0.585) showed non-significant main effects. The interaction term (β = 0.64, p = 0.163) suggested a potential synergistic effect (higher Grayratio might amplify power264.W's impact), but the wide CI (−0.26 to 1.53) and non-significance indicate uncertainty. Significant predictors included age (β = −0.25, p < 0.001) and education (β = 1.76, p < 0.001). The interaction model marginally improved fit (Marginal R²: 0.251 vs. 0.248), but random effects (ICC = 0.02) revealed minimal between-site variance.
+
+## Sensitivity Analysis (changing Grayratio to meanthickness)
+```{r}
+lmermodel_total3 <- lmer(
+  nih_totalcogcomp_unadjusted ~ power264.W_scale + MeanThickness + interview_age_years + sex + moca_edu + (1| site),
+  data = hcpa_final
+)
+
+lmermodel_total4 <- lmer(
+  nih_totalcogcomp_unadjusted ~ power264.W_scale + MeanThickness + power264.W*MeanThickness + interview_age_years + sex + moca_edu + (1| site),
+  data = hcpa_final
+)
+
+tab_model(lmermodel_total3,lmermodel_total4,dv.labels = c("Without interaction term", "With interaction term"))
+
+```
+This model tested interactions between MeanThickness (raw scale) and standardized power264.W. Without the interaction, MeanThickness had a significant positive effect (β = 11.24, p = 0.010), but this vanished when the interaction was added (β = 2.19, p = 0.853). The interaction term (β = 46.07, p = 0.411) was large but highly uncertain (CI: −63.92 to 156.06), suggesting possible moderation by power264.W in some contexts. As before, age (β = −0.18, p < 0.001) and education (β = 1.79, p < 0.001) were robust predictors. Model fit barely changed (Marginal R²: 0.258 for both), and site-level variance remained low (ICC = 0.03).
+
+## Change segregation measure atlas for interactions term
+```{r}
+lmermodel_total_264 <- lmer(
+  nih_totalcogcomp_unadjusted ~ power264.W_scale + Grayratio_scale + power264.W_scale*Grayratio_scale + interview_age_years + sex + moca_edu+ (1| site),
+  data = hcpa_final
+)
+
+lmermodel_total_7 <- lmer(
+  nih_totalcogcomp_unadjusted ~ scahefer200N7.W_scale + Grayratio_scale + scahefer200N7.W_scale*Grayratio_scale + interview_age_years + sex + moca_edu+ (1| site),
+  data = hcpa_final
+)
+
+lmermodel_total_17 <- lmer(
+  nih_totalcogcomp_unadjusted ~ scahefer200N17.W_scale + Grayratio_scale + scahefer200N17.W_scale*Grayratio_scale + interview_age_years + sex + moca_edu+ (1| site),
+  data = hcpa_final
+)
+
+tab_model(lmermodel_total_264,lmermodel_total_7,lmermodel_total_17,dv.labels = c("Power264", "Scahefer200N7", "Scahefer200N17"))
+```
+This analysis examined three regression models testing the effects of standardized neuroimaging predictors (Power264, Schaefer200N7, Schaefer200N17) and their interactions with Grayratio on cognitive outcomes, while controlling for age, sex, and education. None of the main effects for the neuroimaging predictors (Power264: β = -0.27, p = 0.573; Schaefer200N7: β = -0.22, p = 0.637; Schaefer200N17: β = -0.20, p = 0.674) or their interactions with Grayratio (Power264×Grayratio: β = 0.64, p = 0.163; Schaefer200N7×Grayratio: β = 0.62, p = 0.155; Schaefer200N17×Grayratio: β = 0.68, p = 0.118) reached statistical significance, though all interactions showed modest positive effect sizes. In contrast, older age (β ≈ -0.24 to -0.25, all p < 0.001) and higher education (β ≈ 1.76-1.77, all p < 0.001) were consistently and strongly associated with better cognitive performance across all models. The models explained a similar proportion of variance (Marginal R² ≈ 0.251 for all), with minimal between-site variability (ICC ≈ 0.02-0.03). Overall, while the neuroimaging variables did not independently predict cognitive outcomes, their interactions with Grayratio showed suggestive but non-significant synergistic effects that warrant further investigation in larger samples.
+
+## Outcome variable fluidcogcomp
+```{r}
+lmermodel_fluid1 <- lmer(
+  nih_fluidcogcomp_unadjusted ~ power264.W_scale + Grayratio_scale + interview_age_years + sex + moca_edu + (1| site),
+  data = hcpa_final
+)
+
+lmermodel_fluid2 <- lmer(
+  nih_fluidcogcomp_unadjusted ~ power264.W_scale + Grayratio_scale + power264.W_scale*Grayratio_scale + interview_age_years + sex + moca_edu + (1| site),
+  data = hcpa_final
+)
+
+tab_model(lmermodel_fluid1,lmermodel_fluid2,dv.labels = c("Without interaction term", "With interaction term"))
+
+```
+The analysis examined cognitive outcomes using standardized predictors (power264.W, Grayratio) with and without their interaction. Neither power264.W (β = -0.13, p = 0.799) nor Grayratio (β = 0.87, p = 0.168) showed significant main effects, though Grayratio had a moderate positive trend. The interaction term (β = 0.74, p = 0.133) suggested a potential synergistic relationship, but the wide CI (-0.23 to 1.70) indicated uncertainty. Significant predictors included older age (β = -0.45, p < 0.001) and higher education (β = 1.41, p < 0.001). The model explained 38% of variance (Marginal R² = 0.383), with negligible between-site differences (ICC = 0.01).
+
+## Sensitivity Analysis (changing Grayratio to meanthickness)
+```{r}
+lmermodel_fluid3 <- lmer(
+  nih_fluidcogcomp_unadjusted ~ power264.W_scale + MeanThickness + interview_age_years + sex + moca_edu + (1| site),
+  data = hcpa_final
+)
+
+lmermodel_fluid4 <- lmer(
+  nih_fluidcogcomp_unadjusted ~ power264.W_scale + MeanThickness + power264.W*MeanThickness + interview_age_years + sex + moca_edu + (1| site),
+  data = hcpa_final
+)
+
+tab_model(lmermodel_fluid3,lmermodel_fluid4,dv.labels = c("Without interaction term", "With interaction term"))
+
+```
+This model tested interactions between raw-scale MeanThickness and standardized power264.W. Without the interaction, MeanThickness had a significant positive effect (β = 12.37, p = 0.008), but this vanished when the interaction was added (β = 9.31, p = 0.466). The interaction term (β = 15.54, p = 0.797) was large but highly uncertain (CI: -103.17 to 134.25), implying no clear moderation by power264.W. Again, age (β = -0.40, p < 0.001) and education (β = 1.43, p < 0.001) were robust predictors. Model fit remained stable (Marginal R² ≈ 0.388), with minimal site-level variance (ICC = 0.01).
+
+## Change segregation measure atlas for interactions term
+```{r}
+lmermodel_fluid_264 <- lmer(
+  nih_fluidcogcomp_unadjusted ~ power264.W_scale + Grayratio_scale + power264.W_scale*Grayratio_scale + interview_age_years + sex + moca_edu+ (1| site),
+  data = hcpa_final
+)
+
+lmermodel_fluid_7 <- lmer(
+  nih_fluidcogcomp_unadjusted ~ scahefer200N7.W_scale + Grayratio_scale + scahefer200N7.W_scale*Grayratio_scale + interview_age_years + sex + moca_edu+ (1| site),
+  data = hcpa_final
+)
+
+lmermodel_fluid_17 <- lmer(
+  nih_fluidcogcomp_unadjusted ~ scahefer200N17.W_scale + Grayratio_scale + scahefer200N17.W_scale*Grayratio_scale + interview_age_years + sex + moca_edu+ (1| site),
+  data = hcpa_final
+)
+
+tab_model(lmermodel_fluid_264,lmermodel_fluid_7,lmermodel_fluid_17,dv.labels = c("Power264", "Scahefer200N7", "Scahefer200N17"))
+```
+This analysis examined three regression models testing the effects of different neuroimaging predictors (Power264, Schaefer200N7, Schaefer200N17) and their interactions with Grayratio on cognitive outcomes, while controlling for demographic factors. None of the main effects for the neuroimaging predictors (Power264: β = -0.13, p = 0.799; Schaefer200N7: β = -0.16, p = 0.757; Schaefer200N17: β = -0.15, p = 0.770) reached statistical significance, though Grayratio showed a consistent positive trend (β ≈ 0.83-0.87, p ≈ 0.168-0.187). The interaction terms between Grayratio and each neuroimaging predictor showed modest positive effects that approached but did not reach significance (Power264×Grayratio: β = 0.74, p = 0.133; Schaefer200N7×Grayratio: β = 0.83, p = 0.078; Schaefer200N17×Grayratio: β = 0.89, p = 0.056). In contrast, older age (β ≈ -0.45, p < 0.001) and higher education (β ≈ 1.41-1.42, p < 0.001) were strongly and consistently associated with cognitive outcomes across all models. The models explained a similar proportion of variance (Marginal R² ≈ 0.383-0.385), with minimal between-site variability (ICC ≈ 0.01). These results suggest that while the neuroimaging variables did not independently predict cognitive performance, their interactions with Grayratio may warrant further investigation, particularly given the borderline significance (p ≈ 0.056-0.078) for the Schaefer atlas regions. The robust effects of age and education highlight their importance as covariates in cognitive studies.
+
+## Outcome variable crycogcomp
+```{r}
+lmermodel_cry1 <- lmer(
+  nih_crycogcomp_unadjusted ~ power264.W_scale + Grayratio_scale + interview_age_years + sex + moca_edu + (1| site),
+  data = hcpa_final
+)
+
+lmermodel_cry2 <- lmer(
+  nih_crycogcomp_unadjusted ~ power264.W_scale + Grayratio_scale + power264.W_scale*Grayratio_scale + interview_age_years + sex + moca_edu + (1| site),
+  data = hcpa_final
+)
+
+tab_model(lmermodel_cry1,lmermodel_cry2,dv.labels = c("Without interaction term", "With interaction term"))
+
+```
+The model examining cognitive outcomes found no significant main effects for standardized predictors power264.W (β = -0.32, p = 0.465) or Grayratio (β = -0.27, p = 0.610), nor for their interaction (β = 0.31, p = 0.453). Only higher education (β = 1.54, p < 0.001) showed a robust positive association, while age and sex were non-significant. The model explained limited variance (Marginal R² = 0.150), with minimal between-site differences (ICC = 0.04).
+
+## Sensitivity Analysis (changing Grayratio to meanthickness)
+```{r}
+lmermodel_cry3 <- lmer(
+  nih_crycogcomp_unadjusted ~ power264.W_scale + MeanThickness + interview_age_years + sex + moca_edu + (1| site),
+  data = hcpa_final
+)
+
+lmermodel_cry4 <- lmer(
+  nih_crycogcomp_unadjusted ~ power264.W_scale + MeanThickness + power264.W*MeanThickness + interview_age_years + sex + moca_edu + (1| site),
+  data = hcpa_final
+)
+
+tab_model(lmermodel_cry3,lmermodel_cry4,dv.labels = c("Without interaction term", "With interaction term"))
+
+```
+When testing interactions with raw-scale MeanThickness, neither the main effect of power264.W (β = -8.16, p = 0.214) nor MeanThickness (β = -5.17, p = 0.629) reached significance, and their interaction was large but uncertain (β = 60.12, p = 0.236). Older age (β = 0.10, p = 0.012) and education (β = 1.57, p < 0.001) remained significant predictors. The model fit was weak (Marginal R² = 0.154), with slight site-level variance (ICC = 0.05).
+
+## Change segregation measure atlas for interactions term
+```{r}
+lmermodel_cry_264 <- lmer(
+  nih_crycogcomp_unadjusted ~ power264.W_scale + Grayratio_scale + power264.W_scale*Grayratio_scale + interview_age_years + sex + moca_edu+ (1| site),
+  data = hcpa_final
+)
+
+lmermodel_cry_7 <- lmer(
+  nih_crycogcomp_unadjusted ~ scahefer200N7.W_scale + Grayratio_scale + scahefer200N7.W_scale*Grayratio_scale + interview_age_years + sex + moca_edu+ (1| site),
+  data = hcpa_final
+)
+
+lmermodel_cry_17 <- lmer(
+  nih_crycogcomp_unadjusted ~ scahefer200N17.W_scale + Grayratio_scale + scahefer200N17.W_scale*Grayratio_scale + interview_age_years + sex + moca_edu+ (1| site),
+  data = hcpa_final
+)
+
+tab_model(lmermodel_cry_264,lmermodel_cry_7,lmermodel_cry_17,dv.labels = c("Power264", "Scahefer200N7", "Scahefer200N17"))
+```
+This analysis examined three regression models testing different neuroimaging predictors (Power264, Schaefer200N7, Schaefer200N17) and their interactions with Grayratio on cognitive outcomes. None of the neuroimaging predictors showed significant main effects (Power264: β = -0.32, p = 0.465; Schaefer200N7: β = -0.22, p = 0.613; Schaefer200N17: β = -0.20, p = 0.656) or significant interactions with Grayratio (Power264×Grayratio: β = 0.31, p = 0.453; Schaefer200N7×Grayratio: β = 0.19, p = 0.628; Schaefer200N17×Grayratio: β = 0.22, p = 0.582). Grayratio itself also showed no significant association (β ≈ -0.28, p ≈ 0.599-0.610). The only robust predictor was higher education (β = 1.54, p < 0.001), while age and sex were non-significant. The models explained minimal variance (Marginal R² ≈ 0.149-0.150) with slight between-site differences (ICC ≈ 0.04-0.05). These results suggest that neither the neuroimaging measures nor their interactions with Grayratio significantly predict cognitive outcomes in this sample, with education being the sole consistent predictor. The null findings may reflect limited effect sizes or the need for larger samples to detect subtle brain-behavior relationships.
+
+
+By testing the interactions term effect between segregation index (W) with Graymatter ratio, the table below summarize all the results, which show there are no interaction term exist within all the model.
+```{r message=FALSE, warning=FALSE}
+img2 <- image_read("~/Desktop/HCPA-table.jpg")
+print(img2)
+```
