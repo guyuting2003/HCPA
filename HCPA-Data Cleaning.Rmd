@@ -1,0 +1,308 @@
+---
+title: "HCPA- Data Cleaning"
+output:
+  html_document:
+    code_folding: hide
+date: "2025-07-30"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+rm(list=ls())
+library(R.matlab)
+library(dplyr)
+library(readxl)
+library(knitr)
+library(kableExtra)
+library(arsenal)
+library(stringr)
+library(devtools)
+devtools::install_github("strengejacke/strengejacke")
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+library(magick)
+library(lme4)
+library(lubridate)
+library(tidyverse)
+library(ggplot2)
+```
+
+## loading dataset
+```{r}
+segregation_index <- read.csv('~/Desktop/segregation_index_W_n725_2025_07_08.csv')
+hcpa_merged = readxl::read_xlsx('~/Desktop/hcpa_merged_demo_cog_v1_2021_04_17.xlsx')
+freesurfeer <- load('~/Desktop/HCPA_V1_n725_freesurfeer_DKTaseg_measures_2021_04_16.Rdat')
+framwise <- read.csv('~/Desktop/Framewise_displacement_outlier_p3mm.csv')
+ndar <- read.table("ndar_subject01.txt", header = TRUE, sep = "\t")
+```
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(ggpubr)
+
+# Load your data (replace with your actual data loading method if needed)
+# segregation_index <- read.csv("your_data.csv")
+
+# Verify column names
+print(colnames(segregation_index))
+
+# Select columns for each atlas
+power264 <- segregation_index %>% select(ID, contains("power264."))
+sch200N7 <- segregation_index %>% select(ID, contains("scahefer200N7."))  # Note the spelling matches your data
+sch200N17 <- segregation_index %>% select(ID, contains("scahefer200N17.")) # Note the spelling matches your data
+
+# Define metrics
+metrics <- c("W", "B", "S")
+
+# Function to calculate correlations and create plots
+analyze_atlas_pair <- function(atlas1, atlas2, name1, name2) {
+  results <- list()
+  
+  for (metric in metrics) {
+    # Construct column names
+    col1 <- paste0(name1, ".", metric)
+    col2 <- paste0(name2, ".", metric)
+    
+    # Extract data
+    x <- atlas1[[col1]]
+    y <- atlas2[[col2]]
+    
+    # Calculate correlation
+    cor_test <- cor.test(x, y, method = "pearson")
+    
+    # Create scatter plot
+    plot <- ggplot(data.frame(x, y), aes(x = x, y = y)) +
+      geom_point(color = "blue", alpha = 0.6) +
+      geom_smooth(method = "lm", color = "red", se = FALSE) +
+      stat_cor(method = "pearson", label.x.npc = "left", label.y.npc = "top") +
+      labs(title = paste(name1, "vs", name2, "-", metric),
+           x = paste(name1, metric),
+           y = paste(name2, metric)) +
+      theme_minimal()
+    
+    # Store results
+    results[[metric]] <- list(
+      r = cor_test$estimate,
+      p = cor_test$p.value,
+      plot = plot
+    )
+  }
+  
+  return(results)
+}
+
+# Create list of atlases with correct names
+atlases <- list(
+  power264 = power264,
+  scahefer200N7 = sch200N7,  # Matches your data spelling
+  scahefer200N17 = sch200N17  # Matches your data spelling
+)
+
+# Generate all possible pairwise comparisons
+atlas_pairs <- combn(names(atlases), 2, simplify = FALSE)
+
+# Initialize results storage
+correlation_results <- list()
+all_plots <- list()
+
+# Perform analyses
+for (i in seq_along(atlas_pairs)) {
+  pair <- atlas_pairs[[i]]
+  name1 <- pair[1]
+  name2 <- pair[2]
+  
+  cat("\nAnalyzing:", name1, "vs", name2, "\n")
+  
+  # Run analysis
+  analysis <- analyze_atlas_pair(
+    atlas1 = atlases[[name1]],
+    atlas2 = atlases[[name2]],
+    name1 = name1,
+    name2 = name2
+  )
+  
+  # Store results
+  comparison_name <- paste(name1, "vs", name2)
+  correlation_results[[comparison_name]] <- analysis
+  
+  # Collect plots
+  for (metric in metrics) {
+    plot_name <- paste(comparison_name, metric)
+    all_plots[[plot_name]] <- analysis[[metric]]$plot
+  }
+}
+
+# Print correlation results
+cat("\nCorrelation Results:\n")
+for (comparison in names(correlation_results)) {
+  cat("\n", comparison, "\n")
+  for (metric in metrics) {
+    res <- correlation_results[[comparison]][[metric]]
+    cat(metric, ": r =", round(res$r, 3), 
+        ", p =", ifelse(res$p < 0.001, "<0.001", round(res$p, 3)), "\n")
+  }
+}
+
+# Display all plots
+cat("\nDisplaying plots...\n")
+for (plot_name in names(all_plots)) {
+  print(all_plots[[plot_name]])
+}
+
+```
+
+By using Pearson correlation, all pairwise correlations for W, B, and S measures are exceptionally high (r > 0.94)
+, and the p-values of 0 indicate these correlations are statistically significant beyond any reasonable doubt. The Schaefer atlas (200N7 or 200N17) seems to have the maximum consistency between Atlases, but Power264 is a more widely used in neuroimaging, even though it has a slightly lower (but still very strong) correlationos with Schaefer atlases. Thus, we choose Power264 atlas and W indices as our final decision.The W measure are not exactly same, but quite coherent.
+
+## Create segregation dataset
+```{r}
+seg_data <- segregation_index %>%
+  select(ID, power264.W, scahefer200N7.W, scahefer200N17.W)%>%
+  rename(id = ID)
+```
+
+## Create framwise_clean dataset
+```{r}
+framwise_clean <- framwise %>%
+  filter(perc.outliers <= 0.30)
+```
+
+## Create Grayratio
+```{r}
+fsdat$Grayratio <- fsdat$TotalGray/fsdat$eTIV
+
+```
+
+## Merge dataset
+```{r}
+hcpa_datav1 <- left_join(
+  framwise_clean,                                 
+  seg_data,         
+  by = "id"                          
+)
+```
+
+```{r}
+hcpa_datav1 <- left_join(
+  framwise_clean,                                 
+  seg_data,         
+  by = "id"                          
+)
+```
+
+```{r}
+hcpa_datav2 <- left_join(
+  hcpa_datav1,                                 
+  fsdat,         
+  by = "id"                          
+)
+```
+
+```{r}
+hcpa_datav2 <- hcpa_datav2 %>%
+  mutate(id = str_replace(id, "_V1_MR$", ""))
+```
+
+```{r}
+hcpa_datav3 <- left_join(
+  hcpa_datav2,                                 
+  hcpa_merged,         
+  by = c("id" = "src_subject_id")                          
+)
+```
+
+```{r}
+hcpa_datav4 <- left_join(
+  hcpa_datav3,                                 
+  ndar %>% select(src_subject_id, site),         
+  by = c("id" = "src_subject_id")              
+)
+```
+
+
+## Data Cleaning
+```{r}
+totalcomp_indices <- which(is.na(hcpa_datav4$nih_totalcogcomp_unadjusted))
+
+# Print the indices
+print(totalcomp_indices)
+```
+
+```{r}
+fluid_indices <- which(is.na(hcpa_datav4$nih_fluidcogcomp_unadjusted))
+
+# Print the indices
+print(fluid_indices)
+```
+
+```{r}
+cry_indices <- which(is.na(hcpa_datav4$nih_crycogcomp_unadjusted))
+
+# Print the indices
+print(cry_indices)
+```
+
+```{r}
+hcpa_datav4$interview_age_years <- floor(hcpa_datav4$interview_age / 12)
+age_indices <- which(is.na(hcpa_datav4$interview_age_years))
+
+# Print the indices
+print(age_indices)
+```
+
+```{r}
+w_indices <- which(is.na(hcpa_datav4$power264.W))
+
+# Print the indices
+print(w_indices)
+```
+
+```{r}
+ratio_indices <- which(is.na(hcpa_datav4$Grayratio))
+
+# Print the indices
+print(ratio_indices)
+```
+
+```{r}
+sex_indices <- which(is.na(hcpa_datav4$sex))
+
+# Print the indices
+print(sex_indices)
+```
+
+```{r}
+thickness_indices <- which(is.na(hcpa_datav4$MeanThickness))
+
+# Print the indices
+print(thickness_indices)
+```
+
+```{r}
+edu_indices <- which(is.na(hcpa_datav4$moca_edu))
+
+# Print the indices
+print(edu_indices)
+```
+
+## Create final dataset
+```{r}
+hcpa_final <- hcpa_datav4 %>%
+  filter(!is.na(nih_totalcogcomp_unadjusted) & !is.na(nih_fluidcogcomp_unadjusted) & !is.na(nih_crycogcomp_unadjusted) & !is.na(interview_age_years) & !is.na(power264.W) & !is.na(Grayratio) & !is.na(sex) & ! is.na(MeanThickness) &! is.na(interview_date)&! is.na(moca_edu))%>%
+  mutate(interview_date = format(mdy(interview_date), "%Y-%m-%d"))
+```
+
+## Standardize W & Grayratio
+```{r}
+hcpa_final[, c("Grayratio_scale", "power264.W_scale", "scahefer200N7.W_scale", "scahefer200N17.W_scale")] <- 
+  scale(hcpa_final[, c("Grayratio", "power264.W", "scahefer200N7.W", "scahefer200N17.W")])
+
+```
+
+```{r}
+write.csv(hcpa_final, "~/Desktop/hcpa_final.csv", row.names = FALSE)
+```
+
+
